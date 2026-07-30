@@ -151,7 +151,7 @@ class ComfyUiClient:
         filename: str,
         fileblob: bytes,
         mime_type: str,
-    ) -> str | None:
+    ) -> str:
         files = {
             "image": (filename, fileblob, mime_type),
             "overwrite": "true",
@@ -163,10 +163,19 @@ class ComfyUiClient:
                 files=files,
                 headers=self._get_headers(),
             )
+        except requests.RequestException as e:
+            raise Exception(f"Failed to upload image to ComfyUI: {e}")
+        if res.status_code != 200:
+            raise Exception(
+                f"Failed to upload image to ComfyUI (HTTP {res.status_code}): {res.text}"
+            )
+        try:
             image_name = res.json().get("name")
-            return image_name
-        except:
-            return None
+        except ValueError:
+            raise Exception("ComfyUI returned an invalid response when uploading the image.")
+        if not image_name:
+            raise Exception("ComfyUI did not return an image name after upload.")
+        return image_name
 
     def queue_prompt(self, client_id: str, prompt: dict) -> str:
         res = requests.post(
@@ -184,7 +193,7 @@ class ComfyUiClient:
             raise Exception("ComfyUI error: " + json.dumps(res.json()))
         try:
             prompt_id = res.json()["prompt_id"]
-        except:
+        except (KeyError, ValueError):
             raise Exception("Error queuing the prompt. Please check the workflow JSON.")
         return prompt_id
 
