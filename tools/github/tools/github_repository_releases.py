@@ -1,14 +1,18 @@
 import json
 from collections.abc import Generator
-from datetime import datetime
 from typing import Any
 
-import requests
-
 from dify_plugin import Tool
-from dify_plugin.entities.provider_config import CredentialType
 from dify_plugin.entities.tool import ToolInvokeMessage
 from dify_plugin.errors.model import InvokeError
+
+from .github_api import (
+    format_datetime,
+    github_request,
+    missing_credentials_message,
+    missing_parameter_message,
+    raise_request_error,
+)
 
 
 class GithubRepositoryReleasesTool(Tool):
@@ -20,42 +24,23 @@ class GithubRepositoryReleasesTool(Tool):
         repo = tool_parameters.get("repo", "")
         per_page = tool_parameters.get("per_page", 10)
 
-        credential_type = self.runtime.credential_type
-
-        if not owner:
-            yield self.create_text_message("Please input owner")
-            return
-        if not repo:
-            yield self.create_text_message("Please input repo")
+        parameter_error = missing_parameter_message(tool_parameters, ["owner", "repo"])
+        if parameter_error:
+            yield self.create_text_message(parameter_error)
             return
 
-        if credential_type == CredentialType.API_KEY and "access_tokens" not in self.runtime.credentials:
-            yield self.create_text_message("GitHub API Access Tokens is required.")
-            return
-
-        if credential_type == CredentialType.OAUTH and "access_tokens" not in self.runtime.credentials:
-            yield self.create_text_message("GitHub OAuth Access Tokens is required.")
+        credentials_error = missing_credentials_message(self.runtime)
+        if credentials_error:
+            yield self.create_text_message(credentials_error)
             return
 
         access_token = self.runtime.credentials.get("access_tokens")
         try:
-            headers = {
-                "Content-Type": "application/vnd.github+json",
-                "Authorization": f"Bearer {access_token}",
-                "X-GitHub-Api-Version": "2022-11-28",
-            }
-            s = requests.session()
-            api_domain = "https://api.github.com"
-            url = f"{api_domain}/repos/{owner}/{repo}/releases"
+            path = f"/repos/{owner}/{repo}/releases"
 
             params = {"per_page": per_page}
 
-            response = s.request(
-                method="GET",
-                headers=headers,
-                url=url,
-                params=params,
-            )
+            response = github_request("GET", path, access_token, params=params)
 
             if response.status_code == 200:
                 response_data = response.json()
@@ -84,20 +69,10 @@ class GithubRepositoryReleasesTool(Tool):
                             }
                             for asset in release.get("assets", [])
                         ],
-                        "created_at": datetime.strptime(release.get("created_at", ""), "%Y-%m-%dT%H:%M:%SZ").strftime(
-                            "%Y-%m-%d %H:%M:%S"
-                        )
-                        if release.get("created_at")
-                        else "",
-                        "published_at": datetime.strptime(
-                            release.get("published_at", ""), "%Y-%m-%dT%H:%M:%SZ"
-                        ).strftime("%Y-%m-%d %H:%M:%S")
-                        if release.get("published_at")
-                        else "",
+                        "created_at": format_datetime(release.get("created_at")),
+                        "published_at": format_datetime(release.get("published_at")),
                     }
                     releases.append(release_info)
-
-                s.close()
 
                 if not releases:
                     yield self.create_text_message(f"No releases found in {owner}/{repo}")
@@ -109,10 +84,7 @@ class GithubRepositoryReleasesTool(Tool):
                         )
                     )
             else:
-                response_data = response.json()
-                raise InvokeError(
-                    f"Request failed: {response.status_code} {response_data.get('message', 'Unknown error')}"
-                )
+                raise_request_error(response)
         except InvokeError as e:
             raise e
         except Exception as e:

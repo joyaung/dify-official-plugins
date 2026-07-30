@@ -2,12 +2,17 @@ import json
 from collections.abc import Generator
 from typing import Any
 
-import requests
-
 from dify_plugin import Tool
-from dify_plugin.entities.provider_config import CredentialType
 from dify_plugin.entities.tool import ToolInvokeMessage
 from dify_plugin.errors.model import InvokeError
+
+from .github_api import (
+    github_request,
+    missing_credentials_message,
+    missing_parameter_message,
+    raise_request_error,
+    short_sha,
+)
 
 
 class GithubSearchCodeTool(Tool):
@@ -20,42 +25,26 @@ class GithubSearchCodeTool(Tool):
         sort = tool_parameters.get("sort", "")
         order = tool_parameters.get("order", "desc")
 
-        credential_type = self.runtime.credential_type
-
-        if not query:
-            yield self.create_text_message("Please input search query")
+        parameter_error = missing_parameter_message(tool_parameters, [("query", "search query")])
+        if parameter_error:
+            yield self.create_text_message(parameter_error)
             return
 
-        if credential_type == CredentialType.API_KEY and "access_tokens" not in self.runtime.credentials:
-            yield self.create_text_message("GitHub API Access Tokens is required.")
-            return
-
-        if credential_type == CredentialType.OAUTH and "access_tokens" not in self.runtime.credentials:
-            yield self.create_text_message("GitHub OAuth Access Tokens is required.")
+        credentials_error = missing_credentials_message(self.runtime)
+        if credentials_error:
+            yield self.create_text_message(credentials_error)
             return
 
         access_token = self.runtime.credentials.get("access_tokens")
         try:
-            headers = {
-                "Content-Type": "application/vnd.github+json",
-                "Authorization": f"Bearer {access_token}",
-                "X-GitHub-Api-Version": "2022-11-28",
-            }
-            s = requests.session()
-            api_domain = "https://api.github.com"
-            url = f"{api_domain}/search/code"
+            path = "/search/code"
 
             params = {"q": query, "per_page": per_page, "order": order}
 
             if sort:
                 params["sort"] = sort
 
-            response = s.request(
-                method="GET",
-                headers=headers,
-                url=url,
-                params=params,
-            )
+            response = github_request("GET", path, access_token, params=params)
 
             if response.status_code == 200:
                 response_data = response.json()
@@ -68,7 +57,7 @@ class GithubSearchCodeTool(Tool):
                     result_info = {
                         "name": item.get("name", ""),
                         "path": item.get("path", ""),
-                        "sha": item.get("sha", "")[:7],
+                        "sha": short_sha(item.get("sha")),
                         "url": item.get("html_url", ""),
                         "git_url": item.get("git_url", ""),
                         "download_url": item.get("download_url", ""),
@@ -103,8 +92,6 @@ class GithubSearchCodeTool(Tool):
 
                 result = {"total_count": total_count, "query": query, "results": search_results}
 
-                s.close()
-
                 if not search_results:
                     yield self.create_text_message(f"No code found for query: {query}")
                 else:
@@ -115,10 +102,7 @@ class GithubSearchCodeTool(Tool):
                         )
                     )
             else:
-                response_data = response.json()
-                raise InvokeError(
-                    f"Request failed: {response.status_code} {response_data.get('message', 'Unknown error')}"
-                )
+                raise_request_error(response)
         except InvokeError as e:
             raise e
         except Exception as e:

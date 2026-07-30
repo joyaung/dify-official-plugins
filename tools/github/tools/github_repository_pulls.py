@@ -1,14 +1,19 @@
 import json
 from collections.abc import Generator
-from datetime import datetime
 from typing import Any
 
-import requests
-
 from dify_plugin import Tool
-from dify_plugin.entities.provider_config import CredentialType
 from dify_plugin.entities.tool import ToolInvokeMessage
 from dify_plugin.errors.model import InvokeError
+
+from .github_api import (
+    format_datetime,
+    github_request,
+    missing_credentials_message,
+    missing_parameter_message,
+    raise_request_error,
+    short_sha,
+)
 
 
 class GithubRepositoryPullsTool(Tool):
@@ -23,42 +28,23 @@ class GithubRepositoryPullsTool(Tool):
         sort = tool_parameters.get("sort", "created")
         direction = tool_parameters.get("direction", "desc")
 
-        credential_type = self.runtime.credential_type
-
-        if not owner:
-            yield self.create_text_message("Please input owner")
-            return
-        if not repo:
-            yield self.create_text_message("Please input repo")
+        parameter_error = missing_parameter_message(tool_parameters, ["owner", "repo"])
+        if parameter_error:
+            yield self.create_text_message(parameter_error)
             return
 
-        if credential_type == CredentialType.API_KEY and "access_tokens" not in self.runtime.credentials:
-            yield self.create_text_message("GitHub API Access Tokens is required.")
-            return
-
-        if credential_type == CredentialType.OAUTH and "access_tokens" not in self.runtime.credentials:
-            yield self.create_text_message("GitHub OAuth Access Tokens is required.")
+        credentials_error = missing_credentials_message(self.runtime)
+        if credentials_error:
+            yield self.create_text_message(credentials_error)
             return
 
         access_token = self.runtime.credentials.get("access_tokens")
         try:
-            headers = {
-                "Content-Type": "application/vnd.github+json",
-                "Authorization": f"Bearer {access_token}",
-                "X-GitHub-Api-Version": "2022-11-28",
-            }
-            s = requests.session()
-            api_domain = "https://api.github.com"
-            url = f"{api_domain}/repos/{owner}/{repo}/pulls"
+            path = f"/repos/{owner}/{repo}/pulls"
 
             params = {"state": state, "per_page": per_page, "sort": sort, "direction": direction}
 
-            response = s.request(
-                method="GET",
-                headers=headers,
-                url=url,
-                params=params,
-            )
+            response = github_request("GET", path, access_token, params=params)
 
             if response.status_code == 200:
                 response_data = response.json()
@@ -87,26 +73,16 @@ class GithubRepositoryPullsTool(Tool):
                         "draft": pull.get("draft", False),
                         "head": {
                             "ref": pull.get("head", {}).get("ref", ""),
-                            "sha": pull.get("head", {}).get("sha", "")[:7],
+                            "sha": short_sha(pull.get("head", {}).get("sha")),
                         },
                         "base": {
                             "ref": pull.get("base", {}).get("ref", ""),
-                            "sha": pull.get("base", {}).get("sha", "")[:7],
+                            "sha": short_sha(pull.get("base", {}).get("sha")),
                         },
-                        "created_at": datetime.strptime(pull.get("created_at", ""), "%Y-%m-%dT%H:%M:%SZ").strftime(
-                            "%Y-%m-%d %H:%M:%S"
-                        )
-                        if pull.get("created_at")
-                        else "",
-                        "updated_at": datetime.strptime(pull.get("updated_at", ""), "%Y-%m-%dT%H:%M:%SZ").strftime(
-                            "%Y-%m-%d %H:%M:%S"
-                        )
-                        if pull.get("updated_at")
-                        else "",
+                        "created_at": format_datetime(pull.get("created_at")),
+                        "updated_at": format_datetime(pull.get("updated_at")),
                     }
                     pulls.append(pull_info)
-
-                s.close()
 
                 if not pulls:
                     yield self.create_text_message(f"No {state} pull requests found in {owner}/{repo}")
@@ -118,10 +94,7 @@ class GithubRepositoryPullsTool(Tool):
                         )
                     )
             else:
-                response_data = response.json()
-                raise InvokeError(
-                    f"Request failed: {response.status_code} {response_data.get('message', 'Unknown error')}"
-                )
+                raise_request_error(response)
         except InvokeError as e:
             raise e
         except Exception as e:

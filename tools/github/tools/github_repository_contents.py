@@ -3,12 +3,11 @@ import json
 from collections.abc import Generator
 from typing import Any
 
-import requests
-
 from dify_plugin import Tool
-from dify_plugin.entities.provider_config import CredentialType
 from dify_plugin.entities.tool import ToolInvokeMessage
 from dify_plugin.errors.model import InvokeError
+
+from .github_api import github_request, missing_credentials_message, missing_parameter_message, raise_request_error
 
 
 class GithubRepositoryContentsTool(Tool):
@@ -21,47 +20,28 @@ class GithubRepositoryContentsTool(Tool):
         path = tool_parameters.get("path", "")
         ref = tool_parameters.get("ref", "")
 
-        credential_type = self.runtime.credential_type
-
-        if not owner:
-            yield self.create_text_message("Please input owner")
-            return
-        if not repo:
-            yield self.create_text_message("Please input repo")
+        parameter_error = missing_parameter_message(tool_parameters, ["owner", "repo"])
+        if parameter_error:
+            yield self.create_text_message(parameter_error)
             return
 
-        if credential_type == CredentialType.API_KEY and "access_tokens" not in self.runtime.credentials:
-            yield self.create_text_message("GitHub API Access Tokens is required.")
-            return
-
-        if credential_type == CredentialType.OAUTH and "access_tokens" not in self.runtime.credentials:
-            yield self.create_text_message("GitHub OAuth Access Tokens is required.")
+        credentials_error = missing_credentials_message(self.runtime)
+        if credentials_error:
+            yield self.create_text_message(credentials_error)
             return
 
         access_token = self.runtime.credentials.get("access_tokens")
         try:
-            headers = {
-                "Content-Type": "application/vnd.github+json",
-                "Authorization": f"Bearer {access_token}",
-                "X-GitHub-Api-Version": "2022-11-28",
-            }
-            s = requests.session()
-            api_domain = "https://api.github.com"
-            url = f"{api_domain}/repos/{owner}/{repo}/contents"
+            api_path = f"/repos/{owner}/{repo}/contents"
 
             if path:
-                url = f"{url}/{path}"
+                api_path = f"{api_path}/{path}"
 
             params = {}
             if ref:
                 params["ref"] = ref
 
-            response = s.request(
-                method="GET",
-                headers=headers,
-                url=url,
-                params=params,
-            )
+            response = github_request("GET", api_path, access_token, params=params)
 
             if response.status_code == 200:
                 response_data = response.json()
@@ -131,12 +111,8 @@ class GithubRepositoryContentsTool(Tool):
                     else:
                         yield self.create_text_message(f"Content type '{response_data.get('type')}' is not supported")
 
-                s.close()
             else:
-                response_data = response.json()
-                raise InvokeError(
-                    f"Request failed: {response.status_code} {response_data.get('message', 'Unknown error')}"
-                )
+                raise_request_error(response)
         except InvokeError as e:
             raise e
         except Exception as e:

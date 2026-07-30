@@ -1,15 +1,18 @@
 import json
 from collections.abc import Generator
-from datetime import datetime
 from typing import Any
 
-import requests
-
 from dify_plugin import Tool
-from dify_plugin.entities.provider_config import CredentialType
 from dify_plugin.entities.tool import ToolInvokeMessage
 from dify_plugin.errors.model import InvokeError
 
+from .github_api import (
+    format_datetime,
+    github_request,
+    missing_credentials_message,
+    missing_parameter_message,
+    short_sha,
+)
 from .github_error_handler import handle_github_api_error
 
 
@@ -24,19 +27,13 @@ class GithubCreatePullReviewTool(Tool):
         event = tool_parameters.get("event", "").upper()
         body = tool_parameters.get("body", "")
         commit_id = tool_parameters.get("commit_id", "")
-        credential_type = self.runtime.credential_type
 
-        if not owner:
-            yield self.create_text_message("Please input owner")
-            return
-        if not repo:
-            yield self.create_text_message("Please input repo")
-            return
-        if not pull_number:
-            yield self.create_text_message("Please input pull_number")
-            return
-        if not event:
-            yield self.create_text_message("Please input event (APPROVE, REQUEST_CHANGES, or COMMENT)")
+        parameter_error = missing_parameter_message(
+            tool_parameters,
+            ["owner", "repo", "pull_number", ("event", "event (APPROVE, REQUEST_CHANGES, or COMMENT)")],
+        )
+        if parameter_error:
+            yield self.create_text_message(parameter_error)
             return
 
         # Validate event
@@ -50,24 +47,14 @@ class GithubCreatePullReviewTool(Tool):
             yield self.create_text_message(f"Body is required when event is {event}")
             return
 
-        if credential_type == CredentialType.API_KEY and "access_tokens" not in self.runtime.credentials:
-            yield self.create_text_message("GitHub API Access Tokens is required.")
-            return
-
-        if credential_type == CredentialType.OAUTH and "access_tokens" not in self.runtime.credentials:
-            yield self.create_text_message("GitHub OAuth Access Tokens is required.")
+        credentials_error = missing_credentials_message(self.runtime)
+        if credentials_error:
+            yield self.create_text_message(credentials_error)
             return
 
         access_token = self.runtime.credentials.get("access_tokens")
         try:
-            headers = {
-                "Content-Type": "application/vnd.github+json",
-                "Authorization": f"Bearer {access_token}",
-                "X-GitHub-Api-Version": "2022-11-28",
-            }
-            s = requests.session()
-            api_domain = "https://api.github.com"
-            url = f"{api_domain}/repos/{owner}/{repo}/pulls/{int(pull_number)}/reviews"
+            path = f"/repos/{owner}/{repo}/pulls/{int(pull_number)}/reviews"
 
             payload = {"event": event}
             if body:
@@ -75,7 +62,7 @@ class GithubCreatePullReviewTool(Tool):
             if commit_id:
                 payload["commit_id"] = commit_id
 
-            response = s.request(method="POST", headers=headers, url=url, json=payload)
+            response = github_request("POST", path, access_token, json=payload)
 
             # API can return 200 or 201 for success
             if response.status_code in [200, 201]:
@@ -91,19 +78,13 @@ class GithubCreatePullReviewTool(Tool):
                     "user": user_login,
                     "state": review.get("state", ""),
                     "body": review.get("body", "") or "",
-                    "commit_id": review.get("commit_id", "")[:7] if review.get("commit_id") else "",
-                    "submitted_at": datetime.strptime(review.get("submitted_at", ""), "%Y-%m-%dT%H:%M:%SZ").strftime(
-                        "%Y-%m-%d %H:%M:%S"
-                    )
-                    if review.get("submitted_at")
-                    else "",
+                    "commit_id": short_sha(review.get("commit_id")),
+                    "submitted_at": format_datetime(review.get("submitted_at")),
                     "url": review.get("html_url", ""),
                 }
 
-                s.close()
                 yield self.create_text_message(json.dumps(result, ensure_ascii=False, indent=2))
             else:
-                s.close()
                 handle_github_api_error(response, f"create review for pull request {owner}/{repo}#{pull_number}")
         except InvokeError as e:
             yield self.create_text_message(f"❌ {str(e)}")
