@@ -2,13 +2,11 @@ import json
 from collections.abc import Generator
 from typing import Any
 
-import requests
-
 from dify_plugin import Tool
-from dify_plugin.entities.provider_config import CredentialType
 from dify_plugin.entities.tool import ToolInvokeMessage
 from dify_plugin.errors.model import InvokeError
 
+from .github_api import github_request, missing_credentials_message, missing_parameter_message
 from .github_error_handler import handle_github_api_error
 
 
@@ -24,16 +22,10 @@ class GithubMergePullTool(Tool):
         commit_title = tool_parameters.get("commit_title", "")
         commit_message = tool_parameters.get("commit_message", "")
         sha = tool_parameters.get("sha", "")
-        credential_type = self.runtime.credential_type
 
-        if not owner:
-            yield self.create_text_message("Please input owner")
-            return
-        if not repo:
-            yield self.create_text_message("Please input repo")
-            return
-        if not pull_number:
-            yield self.create_text_message("Please input pull_number")
+        parameter_error = missing_parameter_message(tool_parameters, ["owner", "repo", "pull_number"])
+        if parameter_error:
+            yield self.create_text_message(parameter_error)
             return
 
         # Validate merge method
@@ -42,24 +34,14 @@ class GithubMergePullTool(Tool):
             yield self.create_text_message(f"Invalid merge_method. Must be one of: {', '.join(valid_methods)}")
             return
 
-        if credential_type == CredentialType.API_KEY and "access_tokens" not in self.runtime.credentials:
-            yield self.create_text_message("GitHub API Access Tokens is required.")
-            return
-
-        if credential_type == CredentialType.OAUTH and "access_tokens" not in self.runtime.credentials:
-            yield self.create_text_message("GitHub OAuth Access Tokens is required.")
+        credentials_error = missing_credentials_message(self.runtime)
+        if credentials_error:
+            yield self.create_text_message(credentials_error)
             return
 
         access_token = self.runtime.credentials.get("access_tokens")
         try:
-            headers = {
-                "Content-Type": "application/vnd.github+json",
-                "Authorization": f"Bearer {access_token}",
-                "X-GitHub-Api-Version": "2022-11-28",
-            }
-            s = requests.session()
-            api_domain = "https://api.github.com"
-            url = f"{api_domain}/repos/{owner}/{repo}/pulls/{int(pull_number)}/merge"
+            path = f"/repos/{owner}/{repo}/pulls/{int(pull_number)}/merge"
 
             payload = {"merge_method": merge_method}
             if commit_title:
@@ -69,7 +51,7 @@ class GithubMergePullTool(Tool):
             if sha:
                 payload["sha"] = sha
 
-            response = s.request(method="PUT", headers=headers, url=url, json=payload)
+            response = github_request("PUT", path, access_token, json=payload)
 
             if response.status_code == 200:
                 merge_data = response.json()
@@ -81,7 +63,6 @@ class GithubMergePullTool(Tool):
                     "sha": merge_data.get("sha", ""),
                 }
 
-                s.close()
                 yield self.create_text_message(json.dumps(result, ensure_ascii=False, indent=2))
             else:
                 handle_github_api_error(response, f"merge pull request {owner}/{repo}#{pull_number}")

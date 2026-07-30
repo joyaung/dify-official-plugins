@@ -1,15 +1,12 @@
 import json
 from collections.abc import Generator
-from datetime import datetime
 from typing import Any
 
-import requests
-
 from dify_plugin import Tool
-from dify_plugin.entities.provider_config import CredentialType
 from dify_plugin.entities.tool import ToolInvokeMessage
 from dify_plugin.errors.model import InvokeError
 
+from .github_api import format_datetime, github_request, missing_credentials_message, missing_parameter_message
 from .github_error_handler import handle_github_api_error
 
 
@@ -26,16 +23,10 @@ class GithubUpdatePullTool(Tool):
         state = tool_parameters.get("state")
         base = tool_parameters.get("base")
         maintainer_can_modify = tool_parameters.get("maintainer_can_modify")
-        credential_type = self.runtime.credential_type
 
-        if not owner:
-            yield self.create_text_message("Please input owner")
-            return
-        if not repo:
-            yield self.create_text_message("Please input repo")
-            return
-        if not pull_number:
-            yield self.create_text_message("Please input pull_number")
+        parameter_error = missing_parameter_message(tool_parameters, ["owner", "repo", "pull_number"])
+        if parameter_error:
+            yield self.create_text_message(parameter_error)
             return
 
         # Validate state if provided
@@ -60,26 +51,16 @@ class GithubUpdatePullTool(Tool):
             yield self.create_text_message("Please provide at least one field to update (title, body, state, base, or maintainer_can_modify)")
             return
 
-        if credential_type == CredentialType.API_KEY and "access_tokens" not in self.runtime.credentials:
-            yield self.create_text_message("GitHub API Access Tokens is required.")
-            return
-
-        if credential_type == CredentialType.OAUTH and "access_tokens" not in self.runtime.credentials:
-            yield self.create_text_message("GitHub OAuth Access Tokens is required.")
+        credentials_error = missing_credentials_message(self.runtime)
+        if credentials_error:
+            yield self.create_text_message(credentials_error)
             return
 
         access_token = self.runtime.credentials.get("access_tokens")
         try:
-            headers = {
-                "Content-Type": "application/vnd.github+json",
-                "Authorization": f"Bearer {access_token}",
-                "X-GitHub-Api-Version": "2022-11-28",
-            }
-            s = requests.session()
-            api_domain = "https://api.github.com"
-            url = f"{api_domain}/repos/{owner}/{repo}/pulls/{int(pull_number)}"
+            path = f"/repos/{owner}/{repo}/pulls/{int(pull_number)}"
 
-            response = s.request(method="PATCH", headers=headers, url=url, json=payload)
+            response = github_request("PATCH", path, access_token, json=payload)
 
             if response.status_code == 200:
                 pull = response.json()
@@ -94,12 +75,9 @@ class GithubUpdatePullTool(Tool):
                     "base": {
                         "ref": pull.get("base", {}).get("ref", ""),
                     },
-                    "updated_at": datetime.strptime(
-                        pull.get("updated_at", ""), "%Y-%m-%dT%H:%M:%SZ"
-                    ).strftime("%Y-%m-%d %H:%M:%S") if pull.get("updated_at") else "",
+                    "updated_at": format_datetime(pull.get("updated_at")),
                 }
 
-                s.close()
                 yield self.create_text_message(json.dumps(result, ensure_ascii=False, indent=2))
             else:
                 handle_github_api_error(response, f"update pull request {owner}/{repo}#{pull_number}")

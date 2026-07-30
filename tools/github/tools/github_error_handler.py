@@ -7,6 +7,8 @@ from typing import Any, Callable
 from dify_plugin.entities.tool import ToolInvokeMessage
 from dify_plugin.errors.model import InvokeError
 
+from .github_api import error_message, raise_request_error
+
 
 def handle_github_api_error(response, context: str = ""):
     """
@@ -21,9 +23,9 @@ def handle_github_api_error(response, context: str = ""):
     """
     try:
         response_data = response.json()
-        error_msg = response_data.get('message', 'Unknown error')
     except Exception:
-        error_msg = 'Unknown error'
+        response_data = {}
+    error_msg = error_message(response)
 
     status_code = response.status_code
 
@@ -78,8 +80,7 @@ def handle_github_api_error(response, context: str = ""):
         )
 
     else:
-        context_msg = f" while {context}" if context else ""
-        raise InvokeError(f"Request failed{context_msg}: {status_code} {error_msg}")
+        raise_request_error(response, context)
 
 
 def safe_invoke(func: Callable) -> Callable:

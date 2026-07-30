@@ -1,15 +1,18 @@
 import json
 from collections.abc import Generator
-from datetime import datetime
 from typing import Any
-from urllib.parse import quote
-
-import requests
 
 from dify_plugin import Tool
 from dify_plugin.entities import I18nObject, ParameterOption
-from dify_plugin.entities.provider_config import CredentialType
 from dify_plugin.entities.tool import ToolInvokeMessage
+
+from .github_api import (
+    DISPLAY_DATE_FORMAT,
+    format_datetime,
+    github_request,
+    missing_credentials_message,
+    missing_parameter_message,
+)
 
 
 class GithubRepositoriesTool(Tool):
@@ -19,30 +22,21 @@ class GithubRepositoriesTool(Tool):
         """
         top_n = tool_parameters.get("top_n", 5)
         query = tool_parameters.get("query", "")
-        credential_type = self.runtime.credential_type
-        if not query:
-            yield self.create_text_message("Please input symbol")
+        parameter_error = missing_parameter_message(tool_parameters, [("query", "symbol")])
+        if parameter_error:
+            yield self.create_text_message(parameter_error)
 
-        if credential_type == CredentialType.API_KEY and "access_tokens" not in self.runtime.credentials:
-            yield self.create_text_message("GitHub API Access Tokens is required.")
-
-        if credential_type == CredentialType.OAUTH and "access_tokens" not in self.runtime.credentials:
-            yield self.create_text_message("GitHub OAuth Access Tokens is required.")
+        credentials_error = missing_credentials_message(self.runtime)
+        if credentials_error:
+            yield self.create_text_message(credentials_error)
 
         access_token = self.runtime.credentials.get("access_tokens")
         try:
-            headers = {
-                "Content-Type": "application/vnd.github+json",
-                "Authorization": f"Bearer {access_token}",
-                # fixed api version
-                "X-GitHub-Api-Version": "2022-11-28",
-            }
-            s = requests.session()
-            api_domain = "https://api.github.com"
-            response = s.request(
-                method="GET",
-                headers=headers,
-                url=f"{api_domain}/search/repositories?q={quote(query)}&sort=stars&per_page={top_n}&order=desc",
+            response = github_request(
+                "GET",
+                "/search/repositories",
+                access_token,
+                params={"q": query, "sort": "stars", "per_page": top_n, "order": "desc"},
             )
             response_data = response.json()
             if response.status_code == 200 and isinstance(response_data.get("items"), list):
@@ -50,7 +44,6 @@ class GithubRepositoriesTool(Tool):
                 if len(response_data.get("items")) > 0:
                     for item in response_data.get("items"):
                         content = {}
-                        updated_at_object = datetime.strptime(item["updated_at"], "%Y-%m-%dT%H:%M:%SZ")
                         content["owner"] = item["owner"]["login"]
                         content["name"] = item["name"]
                         if item["description"] is not None:
@@ -64,9 +57,8 @@ class GithubRepositoriesTool(Tool):
                         content["url"] = item["html_url"]
                         content["star"] = item["watchers"]
                         content["forks"] = item["forks"]
-                        content["updated"] = updated_at_object.strftime("%Y-%m-%d")
+                        content["updated"] = format_datetime(item["updated_at"], DISPLAY_DATE_FORMAT)
                         contents.append(content)
-                    s.close()
                     yield self.create_text_message(
                         self.session.model.summary.invoke(
                             text=json.dumps(contents, ensure_ascii=False),

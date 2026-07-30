@@ -2,13 +2,11 @@ import json
 from collections.abc import Generator
 from typing import Any
 
-import requests
-
 from dify_plugin import Tool
-from dify_plugin.entities.provider_config import CredentialType
 from dify_plugin.entities.tool import ToolInvokeMessage
 from dify_plugin.errors.model import InvokeError
 
+from .github_api import github_request, missing_credentials_message, missing_parameter_message
 from .github_error_handler import handle_github_api_error
 
 
@@ -22,39 +20,23 @@ class GithubPullFilesTool(Tool):
         pull_number = tool_parameters.get("pull_number")
         per_page = tool_parameters.get("per_page", 30)
         include_patch = tool_parameters.get("include_patch", False)
-        credential_type = self.runtime.credential_type
 
-        if not owner:
-            yield self.create_text_message("Please input owner")
-            return
-        if not repo:
-            yield self.create_text_message("Please input repo")
-            return
-        if not pull_number:
-            yield self.create_text_message("Please input pull_number")
+        parameter_error = missing_parameter_message(tool_parameters, ["owner", "repo", "pull_number"])
+        if parameter_error:
+            yield self.create_text_message(parameter_error)
             return
 
-        if credential_type == CredentialType.API_KEY and "access_tokens" not in self.runtime.credentials:
-            yield self.create_text_message("GitHub API Access Tokens is required.")
-            return
-
-        if credential_type == CredentialType.OAUTH and "access_tokens" not in self.runtime.credentials:
-            yield self.create_text_message("GitHub OAuth Access Tokens is required.")
+        credentials_error = missing_credentials_message(self.runtime)
+        if credentials_error:
+            yield self.create_text_message(credentials_error)
             return
 
         access_token = self.runtime.credentials.get("access_tokens")
         try:
-            headers = {
-                "Content-Type": "application/vnd.github+json",
-                "Authorization": f"Bearer {access_token}",
-                "X-GitHub-Api-Version": "2022-11-28",
-            }
-            s = requests.session()
-            api_domain = "https://api.github.com"
-            url = f"{api_domain}/repos/{owner}/{repo}/pulls/{int(pull_number)}/files"
+            path = f"/repos/{owner}/{repo}/pulls/{int(pull_number)}/files"
 
             params = {"per_page": per_page}
-            response = s.request(method="GET", headers=headers, url=url, params=params)
+            response = github_request("GET", path, access_token, params=params)
 
             if response.status_code == 200:
                 files_data = response.json()
@@ -80,8 +62,6 @@ class GithubPullFilesTool(Tool):
                         file_info["patch"] = file.get("patch", "")
 
                     files.append(file_info)
-
-                s.close()
 
                 result = {
                     "total_files": len(files),

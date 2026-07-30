@@ -2,12 +2,11 @@ import base64
 from collections.abc import Generator
 from typing import Any
 
-import requests
-
 from dify_plugin import Tool
-from dify_plugin.entities.provider_config import CredentialType
 from dify_plugin.entities.tool import ToolInvokeMessage
 from dify_plugin.errors.model import InvokeError
+
+from .github_api import github_request, missing_credentials_message, missing_parameter_message, raise_request_error
 
 
 class GithubRepositoryReadmeTool(Tool):
@@ -19,36 +18,20 @@ class GithubRepositoryReadmeTool(Tool):
         repo = tool_parameters.get("repo", "")
         ref = tool_parameters.get("ref", "")
         dir_path = tool_parameters.get("dir", "")
-        credential_type = self.runtime.credential_type
-        if not owner:
-            yield self.create_text_message("Please input owner")
-        if not repo:
-            yield self.create_text_message("Please input repo")
-        if credential_type == CredentialType.API_KEY and "access_tokens" not in self.runtime.credentials:
-            yield self.create_text_message("GitHub API Access Tokens is required.")
-
-        if credential_type == CredentialType.OAUTH and "access_tokens" not in self.runtime.credentials:
-            yield self.create_text_message("GitHub OAuth Access Tokens is required.")
+        parameter_error = missing_parameter_message(tool_parameters, ["owner", "repo"])
+        if parameter_error:
+            yield self.create_text_message(parameter_error)
+        credentials_error = missing_credentials_message(self.runtime)
+        if credentials_error:
+            yield self.create_text_message(credentials_error)
 
         access_token = self.runtime.credentials.get("access_tokens")
         try:
-            headers = {
-                "Content-Type": "application/vnd.github+json",
-                "Authorization": f"Bearer {access_token}",
-                "X-GitHub-Api-Version": "2022-11-28",
-            }
-            s = requests.session()
-            api_domain = "https://api.github.com"
-            url = f"{api_domain}/repos/{owner}/{repo}/readme"
+            api_path = f"/repos/{owner}/{repo}/readme"
             if dir_path:
-                url = f"{url}/{dir_path}"
-            if ref:
-                url = f"{url}?ref={ref}"
-            response = s.request(
-                method="GET",
-                headers=headers,
-                url=url,
-            )
+                api_path = f"{api_path}/{dir_path}"
+            params = {"ref": ref} if ref else None
+            response = github_request("GET", api_path, access_token, params=params)
             response_data = response.json()
             if response.status_code == 200:
                 if response_data.get("encoding") != "base64":
@@ -62,7 +45,7 @@ class GithubRepositoryReadmeTool(Tool):
                 decoded_str = decoded_bytes.decode("utf-8")
                 yield self.create_text_message(decoded_str)
             else:
-                raise InvokeError(f"Request failed: {response.status_code} {response_data.get('message')}")
+                raise_request_error(response)
         except InvokeError as e:
             raise e
         except Exception as e:

@@ -1,14 +1,19 @@
 import json
 from collections.abc import Generator
-from datetime import datetime
 from typing import Any
 
-import requests
-
 from dify_plugin import Tool
-from dify_plugin.entities.provider_config import CredentialType
 from dify_plugin.entities.tool import ToolInvokeMessage
 from dify_plugin.errors.model import InvokeError
+
+from .github_api import (
+    format_datetime,
+    github_request,
+    missing_credentials_message,
+    missing_parameter_message,
+    raise_request_error,
+    short_sha,
+)
 
 
 class GithubRepositoryCommitsTool(Tool):
@@ -22,33 +27,19 @@ class GithubRepositoryCommitsTool(Tool):
         sha = tool_parameters.get("sha", "")
         path = tool_parameters.get("path", "")
 
-        credential_type = self.runtime.credential_type
-
-        if not owner:
-            yield self.create_text_message("Please input owner")
-            return
-        if not repo:
-            yield self.create_text_message("Please input repo")
+        parameter_error = missing_parameter_message(tool_parameters, ["owner", "repo"])
+        if parameter_error:
+            yield self.create_text_message(parameter_error)
             return
 
-        if credential_type == CredentialType.API_KEY and "access_tokens" not in self.runtime.credentials:
-            yield self.create_text_message("GitHub API Access Tokens is required.")
-            return
-
-        if credential_type == CredentialType.OAUTH and "access_tokens" not in self.runtime.credentials:
-            yield self.create_text_message("GitHub OAuth Access Tokens is required.")
+        credentials_error = missing_credentials_message(self.runtime)
+        if credentials_error:
+            yield self.create_text_message(credentials_error)
             return
 
         access_token = self.runtime.credentials.get("access_tokens")
         try:
-            headers = {
-                "Content-Type": "application/vnd.github+json",
-                "Authorization": f"Bearer {access_token}",
-                "X-GitHub-Api-Version": "2022-11-28",
-            }
-            s = requests.session()
-            api_domain = "https://api.github.com"
-            url = f"{api_domain}/repos/{owner}/{repo}/commits"
+            path = f"/repos/{owner}/{repo}/commits"
 
             params = {"per_page": per_page}
 
@@ -57,12 +48,7 @@ class GithubRepositoryCommitsTool(Tool):
             if path:
                 params["path"] = path
 
-            response = s.request(
-                method="GET",
-                headers=headers,
-                url=url,
-                params=params,
-            )
+            response = github_request("GET", path, access_token, params=params)
 
             if response.status_code == 200:
                 response_data = response.json()
@@ -70,26 +56,18 @@ class GithubRepositoryCommitsTool(Tool):
                 commits = []
                 for commit in response_data:
                     commit_info = {
-                        "sha": commit.get("sha", "")[:7],
+                        "sha": short_sha(commit.get("sha")),
                         "full_sha": commit.get("sha", ""),
                         "message": commit.get("commit", {}).get("message", ""),
                         "author": {
                             "name": commit.get("commit", {}).get("author", {}).get("name", ""),
                             "email": commit.get("commit", {}).get("author", {}).get("email", ""),
-                            "date": datetime.strptime(
-                                commit.get("commit", {}).get("author", {}).get("date", ""), "%Y-%m-%dT%H:%M:%SZ"
-                            ).strftime("%Y-%m-%d %H:%M:%S")
-                            if commit.get("commit", {}).get("author", {}).get("date")
-                            else "",
+                            "date": format_datetime(commit.get("commit", {}).get("author", {}).get("date")),
                         },
                         "committer": {
                             "name": commit.get("commit", {}).get("committer", {}).get("name", ""),
                             "email": commit.get("commit", {}).get("committer", {}).get("email", ""),
-                            "date": datetime.strptime(
-                                commit.get("commit", {}).get("committer", {}).get("date", ""), "%Y-%m-%dT%H:%M:%SZ"
-                            ).strftime("%Y-%m-%d %H:%M:%S")
-                            if commit.get("commit", {}).get("committer", {}).get("date")
-                            else "",
+                            "date": format_datetime(commit.get("commit", {}).get("committer", {}).get("date")),
                         },
                         "url": commit.get("html_url", ""),
                         "comment_count": commit.get("commit", {}).get("comment_count", 0),
@@ -108,8 +86,6 @@ class GithubRepositoryCommitsTool(Tool):
                     }
                     commits.append(commit_info)
 
-                s.close()
-
                 if not commits:
                     yield self.create_text_message(f"No commits found in {owner}/{repo}")
                 else:
@@ -120,10 +96,7 @@ class GithubRepositoryCommitsTool(Tool):
                         )
                     )
             else:
-                response_data = response.json()
-                raise InvokeError(
-                    f"Request failed: {response.status_code} {response_data.get('message', 'Unknown error')}"
-                )
+                raise_request_error(response)
         except InvokeError as e:
             raise e
         except Exception as e:
