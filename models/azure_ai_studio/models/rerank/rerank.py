@@ -1,7 +1,5 @@
 import json
 import logging
-import os
-import ssl
 import urllib.request
 from typing import Optional
 
@@ -25,14 +23,6 @@ class AzureRerankModel(RerankModel):
     """
     Model class for Azure AI Studio rerank model.
     """
-
-    def _allow_self_signed_https(self, allowed):
-        if (
-            allowed
-            and (not os.environ.get("PYTHONHTTPSVERIFY", ""))
-            and getattr(ssl, "_create_unverified_context", None)
-        ):
-            ssl._create_default_https_context = ssl._create_unverified_context
 
     def _azure_rerank(self, query_input: str, docs: list[str], endpoint: str, api_key: str, model_name: Optional[str] = None, top_n: Optional[int] = None):
         # Azure AI Foundry may use different endpoint paths depending on the model

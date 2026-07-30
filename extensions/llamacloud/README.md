@@ -1,7 +1,7 @@
 ## llamacloud
 
 **Author:** langgenius
-**Version:** 0.0.2
+**Version:** 0.0.3
 **Type:** extension
 
 ### Description
@@ -27,12 +27,12 @@ Now in Dify's marketplace, find LlamaCloud and install it.
 Create a new endpoint by clicking here:
 <img src="./_assets/llamacloud_add_endpoint.png" width="600" />
 
-Give your endpoint a name, and paste the API Key we just created.
+Give your endpoint a name, paste the LlamaCloud API Key we just created, and set an API key for the endpoint itself (any secret string of your choice, used to authenticate requests to this endpoint).
 <img src="./_assets/name_endpoint.png" width="600" />
 
 Copy the newly created Endpoint URL, go to Knowledge Base, "External Knowledge API", "Add an External Knowledge API", and paste the URL in "API Endpoint". 
 
-**NOTICE: You must REMOVE the "/retrieval" in your URL!!!!!** For API Key, as we didn't configure any authorization, you can type in anything you want. So **PLEASE MAKE SURE NO ONE KNOWS THE ENDPOINT URL!!!**
+**NOTICE: You must REMOVE the "/retrieval" in your URL!!!!!** For API Key, use the same API key you configured on the endpoint; requests without it are rejected with `403`.
 <img src="./_assets/paste_url.png" width="600" />
 
 Once your external knowledge base is connected, go to "connect to an external knowledge base", type in the Pipeline ID in "Knowledge ID", give it a name, and we are good to go.

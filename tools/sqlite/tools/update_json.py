@@ -5,6 +5,7 @@ import os
 import json
 from dify_plugin import Tool
 from dify_plugin.entities.tool import ToolInvokeMessage
+from utils.sql_identifiers import quote_identifier
 
 class UpdateJSONTool(Tool):
     def _invoke(self, tool_parameters: dict[str, Any]) -> Generator[ToolInvokeMessage, None, None]:
@@ -50,9 +51,16 @@ class UpdateJSONTool(Tool):
             yield self.create_text_message(msg)
             yield self.create_json_message({"status": "error", "error": msg})
             return
-        set_clause = ", ".join([f"{col} = ?" for col in data.keys()])
-        where_clause = " AND ".join([f"{col} = ?" for col in where.keys()])
-        sql = f"UPDATE {table} SET {set_clause} WHERE {where_clause}"
+        try:
+            quoted_table = quote_identifier(table)
+            set_clause = ", ".join([f"{quote_identifier(col)} = ?" for col in data.keys()])
+            where_clause = " AND ".join([f"{quote_identifier(col)} = ?" for col in where.keys()])
+        except ValueError as e:
+            msg = str(e)
+            yield self.create_text_message(msg)
+            yield self.create_json_message({"status": "error", "error": msg})
+            return
+        sql = f"UPDATE {quoted_table} SET {set_clause} WHERE {where_clause}"
         values = list(data.values()) + list(where.values())
         # Get database path from credentials
         database_path = self.runtime.credentials.get("database_path")

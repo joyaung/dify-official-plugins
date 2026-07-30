@@ -56,7 +56,8 @@ class SendMessageTool(Tool):
             # If no parent_id is provided, get the current user's ID
             if not parent_id:
                 try:
-                    user_info = sf.query("SELECT Id FROM User WHERE Username = '{}'".format(username))
+                    escaped_username = username.replace("\\", "\\\\").replace("'", "\\'")
+                    user_info = sf.query(f"SELECT Id FROM User WHERE Username = '{escaped_username}'")
                     if user_info.get('totalSize', 0) > 0:
                         parent_id = user_info['records'][0]['Id']
                     else:

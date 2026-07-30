@@ -5,6 +5,7 @@ import os
 import json
 from dify_plugin import Tool
 from dify_plugin.entities.tool import ToolInvokeMessage
+from utils.sql_identifiers import quote_identifier
 
 class InsertJSONTool(Tool):
     def _invoke(self, tool_parameters: dict[str, Any]) -> Generator[ToolInvokeMessage, None, None]:
@@ -42,8 +43,15 @@ class InsertJSONTool(Tool):
             return
         columns = list(data[0].keys())
         placeholders = ", ".join(["?"] * len(columns))
-        column_names = ", ".join(columns)
-        sql = f"INSERT INTO {table} ({column_names}) VALUES ({placeholders})"
+        try:
+            quoted_table = quote_identifier(table)
+            column_names = ", ".join(quote_identifier(col) for col in columns)
+        except ValueError as e:
+            msg = str(e)
+            yield self.create_text_message(msg)
+            yield self.create_json_message({"status": "error", "error": msg})
+            return
+        sql = f"INSERT INTO {quoted_table} ({column_names}) VALUES ({placeholders})"
         values = [tuple(row.get(col) for col in columns) for row in data]
         # Get database path from credentials
         database_path = self.runtime.credentials.get("database_path")

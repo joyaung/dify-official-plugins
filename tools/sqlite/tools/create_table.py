@@ -4,6 +4,7 @@ import sqlite3
 import os
 from dify_plugin import Tool
 from dify_plugin.entities.tool import ToolInvokeMessage
+from utils.sql_identifiers import quote_identifier
 
 class CreateTableTool(Tool):
     def _invoke(self, tool_parameters: dict[str, Any]) -> Generator[ToolInvokeMessage, None, None]:
@@ -36,8 +37,8 @@ class CreateTableTool(Tool):
                 conn.execute(create_table_sql)
                 conn.commit()
                 # Extract table name (simple approach)
-                table_name = create_table_sql.split()[2]
-                cursor = conn.execute(f"PRAGMA table_info({table_name})")
+                table_name = create_table_sql.split()[2].split("(")[0]
+                cursor = conn.execute(f"PRAGMA table_info({quote_identifier(table_name)})")
                 columns = [{"name": row[1], "type": row[2]} for row in cursor.fetchall()]
                 col_list = ", ".join([f"{col['name']} {col['type']}" for col in columns])
                 summary = f"Table {table_name} created successfully with columns: {col_list}"
