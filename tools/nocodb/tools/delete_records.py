@@ -105,7 +105,9 @@ class DeleteRecordsTool(Tool):
                         result = {"success": True, "deleted_count": result, "message": f"{result} record(s) deleted successfully"}
                     elif not isinstance(result, dict):
                         result = {"success": True, "message": f"{record_count} record(s) deleted successfully", "response_data": result}
-                except:
+                except ValueError:
+                    # The delete already succeeded (HTTP 200); the body just
+                    # wasn't JSON, so fall back to a synthesized success payload.
                     result = {"success": True, "message": f"{record_count} record(s) deleted successfully"}
             
             # Create summary message
@@ -122,25 +124,31 @@ class DeleteRecordsTool(Tool):
             yield self.create_text_message(f"Error deleting records: {str(e)}")
     
     def _get_table_id(self, nocodb_url: str, headers: dict, base_id: str, table_name: str) -> str:
-        """Get the table ID from the table name"""
-        try:
-            response = requests.get(
-                f"{nocodb_url}/api/v2/meta/bases/{base_id}/tables",
-                headers=headers,
-                timeout=10
+        """Get the table ID from the table name.
+
+        Returns an empty string only when the table genuinely does not exist in
+        the base. HTTP, network, and JSON parsing failures are propagated to the
+        caller so a real error (e.g. invalid credentials or an unreachable
+        server) is reported as such instead of being masked as a missing table.
+        """
+        response = requests.get(
+            f"{nocodb_url}/api/v2/meta/bases/{base_id}/tables",
+            headers=headers,
+            timeout=10,
+        )
+
+        if response.status_code == 401:
+            raise Exception("Authentication failed - invalid API token")
+        if response.status_code != 200:
+            raise Exception(
+                f"Failed to list tables from NocoDB (HTTP {response.status_code}): {response.text}"
             )
-            
-            if response.status_code != 200:
-                return ""
-            
-            tables = response.json().get("list", [])
-            
-            # Find the table with the matching name
-            for table in tables:
-                if table.get("title") == table_name:
-                    return table.get("id")
-            
-            return ""
-            
-        except Exception:
-            return "" 
+
+        tables = response.json().get("list", [])
+
+        # Find the table with the matching name
+        for table in tables:
+            if table.get("title") == table_name:
+                return table.get("id")
+
+        return ""
