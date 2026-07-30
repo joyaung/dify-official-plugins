@@ -87,7 +87,7 @@ class SparkLLMClient:
         ws.user_id = user_id
         ws.model_kwargs = model_kwargs
         ws.streaming = streaming
-        ws.run_forever(sslopt={"cert_reqs": ssl.CERT_NONE})
+        ws.run_forever(sslopt={"cert_reqs": ssl.CERT_REQUIRED})
 
     def on_error(self, ws, error):
         self.queue.put({"status_code": error.status_code, "error": error.resp_body.decode("utf-8")})

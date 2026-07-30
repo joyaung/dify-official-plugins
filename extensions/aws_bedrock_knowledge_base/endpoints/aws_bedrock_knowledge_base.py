@@ -1,3 +1,4 @@
+import hmac
 import json
 import boto3
 import botocore
@@ -18,8 +19,18 @@ def log(msg):
 
 class Knowledgebaseretrieval(Endpoint):
     def _invoke(self, r: Request, values: Mapping, settings: Mapping) -> Response:
-        log("Knowledge base retrieval invoked.22")
-        
+        log("Knowledge base retrieval invoked.")
+
+        api_key = settings.get("api_key")
+        authorization = r.headers.get("Authorization") or ""
+        if not api_key or not hmac.compare_digest(authorization, f"Bearer {api_key}"):
+            log("Rejected request with missing or invalid API key")
+            return Response(
+                response=json.dumps({"error_code": 1001, "error_msg": "Unauthorized"}),
+                status=403,
+                content_type="application/json"
+            )
+
         try:
             body = r.get_json()
         except Exception as e:
@@ -30,7 +41,7 @@ class Knowledgebaseretrieval(Endpoint):
                 content_type="application/json"
             )
         
-        log(f"Request: method={r.method}, url={r.url}, headers={dict(r.headers)}, data={body}")
+        log(f"Request: method={r.method}, path={r.path}")
 
         retrieval_setting = body.get('retrieval_setting')
         query = body.get('query')

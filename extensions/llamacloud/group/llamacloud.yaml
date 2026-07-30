@@ -13,8 +13,8 @@ settings:
       ja_JP: Llama Cloud APIキーを入力してください
       pt_BR: Por favor, insira sua chave de API do Llama Cloud
   - name: api_key
-    type: text-input
-    required: false
+    type: secret-input
+    required: true
     label:
       en_US: API key
       zh_Hans: API 密钥

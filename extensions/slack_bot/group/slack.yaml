@@ -12,6 +12,19 @@ settings:
       zh_Hans: 请输入你的 Bot Token
       pt_BR: Por favor, insira seu Token do Bot
       ja_JP: ボットトークンを入力してください
+  - name: signing_secret
+    type: secret-input
+    required: true
+    label:
+      en_US: Signing Secret
+      zh_Hans: Signing Secret
+      pt_BR: Signing Secret
+      ja_JP: Signing Secret
+    placeholder:
+      en_US: The Slack app signing secret, used to verify that requests come from Slack
+      zh_Hans: Slack 应用的 Signing Secret，用于验证请求来自 Slack
+      pt_BR: O signing secret do app do Slack, usado para verificar se as solicitações vêm do Slack
+      ja_JP: リクエストが Slack から送信されたことを検証するための Slack アプリの Signing Secret
   - name: allow_retry
     type: boolean
     required: false

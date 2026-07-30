@@ -1,3 +1,4 @@
+import hmac
 import json
 from typing import Mapping
 from llama_cloud.client import LlamaCloud
@@ -10,12 +11,13 @@ class LlamacloudEndpoint(Endpoint):
         """
         Invokes the endpoint with the given request.
         """
-        if settings.get("api_key"):
-            if r.headers.get("Authorization") != f"Bearer {settings.get("api_key")}":
-                return Response(
-                    status=403,
-                    content_type="application/json"
-                )
+        api_key = settings.get("api_key")
+        authorization = r.headers.get("Authorization") or ""
+        if not api_key or not hmac.compare_digest(authorization, f"Bearer {api_key}"):
+            return Response(
+                status=403,
+                content_type="application/json"
+            )
         if not r.is_json:
             # first step of dify call is to check if the endpoint is available
             return Response(

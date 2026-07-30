@@ -1,7 +1,7 @@
 ## Slack Bot
 
 **Author:** Langgenius  
-**Version:** 0.0.4
+**Version:** 0.0.5
 **Type:** extension
 
 ### Description
@@ -29,6 +29,7 @@ Follow these steps to integrate the Slack plugin:
 
    - Create a new endpoint with a custom name
    - Input your Bot User OAuth Token
+   - Input your Slack app "Signing Secret" (Basic Information → App Credentials); it is required to verify that incoming requests are signed by Slack
    - Set "Allow Retry" to false (recommended to prevent duplicate messages)
    - Link to your Dify chatflow/chatbot/agent
    - Save and copy the generated endpoint URL

@@ -19,14 +19,14 @@ The Knowledge ID of your knowledge base, which you will get when your AWS Bedroc
 <img src="./_assets/knowledge_id.png" width="600" />
 
 Follow these steps to connect your Dify Knowledge Base with AWS Bedrock Knowledge Base:
-1. Go to AWS Bedrock Knowledge Base Endpoint and setup your endpoint with AWS Access Key, AWS Access Key ID, and the Region.
+1. Go to AWS Bedrock Knowledge Base Endpoint and setup your endpoint with an Endpoint API Key (any secret string of your choice, used to authenticate requests to this endpoint), AWS Access Key, AWS Access Key ID, and the Region.
 <img src="./_assets/setup_endpoint.png" width="600" />
 
 2. Copy the URL of the created endpoint
 <img src="./_assets/copy_endpoint_url.png" width="600" />
 
 3. Go to Dify Knowledge Base and click on the right upper corner External Knowledge API. Paste the URL into API Endpoint. Give the endpoint a name. 
-**NOTICE: You must REMOVE the "/retrieval" in your URL!!!!!** For API Key, as we didn't configure any authorization, you can type in anything you want. So **PLEASE MAKE SURE NO ONE KNOWS THE ENDPOINT URL!!!**
+**NOTICE: You must REMOVE the "/retrieval" in your URL!!!!!** For API Key, use the same Endpoint API Key you configured on the endpoint; requests without it are rejected with `403`.
 <img src="./_assets/paste_endpoint_url.png" width="600" />
 
 4. Once it's set up, click on connect to an external knowledge base. Choose the external knowledge API you just created, and put the Knowledge ID here. You can configure the top k and threshold here before connection.

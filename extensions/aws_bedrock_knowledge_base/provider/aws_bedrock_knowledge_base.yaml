@@ -1,4 +1,18 @@
 settings:
+  - name: api_key
+    type: secret-input
+    required: true
+    label:
+      en_US: Endpoint API Key
+      zh_Hans: 端点 API 密钥
+      ja_Jp: エンドポイント API キー
+      pt_BR: Chave de API do Endpoint
+    placeholder:
+      en_US: This API key protects your endpoint from unauthorized requests
+      zh_Hans: 此 API 密钥用于保护你的端点免受未授权请求
+      ja_Jp: この API キーは、エンドポイントを不正なリクエストから保護します
+      pt_BR: Esta chave de API protege seu endpoint de solicitações não autorizadas
+
   - name: aws_secret_access_key
     type: secret-input
     required: true

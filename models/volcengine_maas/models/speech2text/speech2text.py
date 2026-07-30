@@ -156,7 +156,7 @@ class VolcengineOpenAISpeech2TextModel(OAICompatSpeech2TextModel):
         )  # payload size(4 bytes)
         full_client_request.extend(payload_bytes)  # payload
         ws = websocket.create_connection(
-            ws_url, header=header, sslopt={"cert_reqs": ssl.CERT_NONE}, timeout=300
+            ws_url, header=header, sslopt={"cert_reqs": ssl.CERT_REQUIRED}, timeout=300
         )
         try:
             # Send initial request
